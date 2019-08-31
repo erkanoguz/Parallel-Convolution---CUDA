@@ -10,4 +10,4 @@ Sequential convolution is performed on CPU and Parallel convolution is performed
 In mathematically, Convolution is a mathematical way of combining two signals to form a third signal.
 
 
-[Image of Yaktocat](https://octodex.github.com/images/yaktocat.png)
+![Ekran Alıntısı](https://user-images.githubusercontent.com/47758157/64062368-2383b580-cbee-11e9-958c-1615c1acfd30.PNG)
