@@ -31,9 +31,9 @@ Two dimensional filter
 
 ![kernel](https://user-images.githubusercontent.com/47758157/64062463-4793c680-cbef-11e9-9534-e9c294e1596a.PNG)
 
-Divided filters one dimensional row and column filters,
+Divided filters into one dimensional row and column filters,
 
-row filter -> ![rowKernel](https://user-images.githubusercontent.com/47758157/64062465-4793c680-cbef-11e9-910f-69897fe34274.PNG)         column filter -> ![colKernel](https://user-images.githubusercontent.com/47758157/64062567-a0b02a00-cbf0-11e9-8509-0fc807cbbe5e.PNG)
+row filter -> ![rowKernel](https://user-images.githubusercontent.com/47758157/64062465-4793c680-cbef-11e9-910f-69897fe34274.PNG)         column filter ->       ![colKernel](https://user-images.githubusercontent.com/47758157/64062567-a0b02a00-cbf0-11e9-8509-0fc807cbbe5e.PNG)
 
 
 
