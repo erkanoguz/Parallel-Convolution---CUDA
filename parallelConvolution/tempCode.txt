@@ -1,0 +1,427 @@
+
+/*
+#include "cuda_runtime.h"
+#include <helper_functions.h>
+#include <helper_cuda.h>
+
+#include <stdio.h>
+#include <cmath>
+#include <iostream>
+#include "device_launch_parameters.h"
+
+*/
+/*Opencv Libraries*/
+//#include <opencv2/highgui.hpp>
+/*Opencv Libraries*/
+//#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+
+#include <chrono>
+
+/*
+using namespace std;
+using namespace cv;
+using namespace std::chrono;
+
+
+
+const unsigned int MAX_FILTER_SIZE = 79;
+__device__ __constant__ float d_convFilter[MAX_FILTER_SIZE * MAX_FILTER_SIZE];
+
+
+
+void kernelImplementation(float*, float*);
+void showMat(const float*, int, int);
+void convolutionRow(const float*, const float*, float*, int, int, int);
+void convolutionCol(const float*, const float*, float*, int, int, int);
+void paddingImage(float*, float*, int, int);
+void pointerToMat(Mat&, float*, int, int);
+void setZero(float*, int, int);
+__global__ void GPUconvolutionCol( float*,  float*, float*, int, int, int);
+__global__ void paddingImageGPU(float*, float*, int, int);
+__global__ void GPUconvolutionRow(float*, float*, float*, int, int, int);
+
+
+*/
+int main()
+{
+
+	// Read image
+	Mat image = imread("cameraman.tif");	
+	Mat im;
+
+	// Check image is read properly
+	if (image.empty())
+	{
+		cout << "ERROR! image can not read" << endl;
+		return -1;
+	}
+
+	image.convertTo(image, CV_32F);
+
+	//cvtColor(image, image, CV_32F);
+	//cvtColor(image, image, COLOR_BGR2GRAY);
+
+	/*GPU Spec*/
+	/*
+	cudaDeviceProp properties;
+	
+	int count;
+	cudaGetDeviceCount(&count);
+	for (int i = 0; i < count; i++)
+	{
+		cudaGetDeviceProperties(&properties, i);
+		cout << "Name: " << properties.name << endl;
+		cout << "Mac threads per block: " << properties.maxThreadsPerBlock << endl;
+
+	}
+	*/
+
+
+
+
+	// Take image dimension
+	int rows = image.rows;
+	int cols = image.cols;
+	int ch = image.channels();
+	int paddedRows = rows + 2;
+	int paddedCols = cols + 2;
+
+	
+	cout << "Image rows: " << rows << endl;
+	cout << "Image cols: " << cols << endl;
+	cout << "Image channels: " << ch << endl;
+	cout << "Image type: " << image.type() << endl;
+
+	// Create 1D image
+	vector<Mat> channels;
+	split(image, channels);
+	im = channels[2];			// 1D float image
+
+
+
+
+	/*-------------saperable KERNEL-------------*/
+	// Allocate host memory for kernel
+
+	int xSize = 3;
+	int ySize = 1;
+	int kernelSize = xSize * ySize;
+
+	float* rowKernel = new float[kernelSize];
+	float* colKernel = new float[kernelSize];
+	
+
+	// Assing values to all kernel 
+	kernelImplementation(rowKernel, colKernel);
+	//cout << "ROW KERNEL: " << endl; showMat(rowKernel, xSize, ySize);
+	//cout << "COL KERNEL: " << endl; showMat(colKernel, xSize, ySize);
+
+	// Padding image
+	Mat padded = Mat::zeros(rows + 2, cols + 2, CV_32F);
+	Mat padded2 = Mat::zeros(rows + 2, cols + 2, CV_32F);
+	float* ptrPadded = (float*) padded.data;
+	float* ptrIm = (float*) im.data;
+	float* ptrPadded2 = (float*) padded2.data;
+
+	paddingImage(ptrIm, ptrPadded, rows + 2, cols + 2);
+
+	// Separable Convolution 
+	float* out = new float[rows * cols];
+	float* out2 = new float[rows * cols];
+	
+
+	auto start = high_resolution_clock::now();
+	convolutionCol(ptrPadded, colKernel, out, rows + 2, cols + 2, kernelSize);
+	paddingImage(out, ptrPadded2, rows + 2, cols + 2);
+	convolutionRow(ptrPadded2, rowKernel, out, rows + 2, cols + 2, kernelSize);
+	auto end = high_resolution_clock::now();
+
+	duration<double> elapsed_time = end - start;
+	cout << "CPU RESULT" << elapsed_time.count() << endl;
+
+	Mat result = Mat::zeros(rows, cols, CV_32F);
+	Mat result2 = Mat::zeros(rows + 2, cols + 2, CV_32F);
+	
+	pointerToMat(result2, ptrPadded2, rows + 2 , cols+ 2);
+	pointerToMat(result, out, rows, cols);
+	
+
+
+
+	
+
+
+
+	/*--------------------------------------------------------------------*/
+	/***************************Parallelizing(CUDA)************************/
+	/*--------------------------------------------------------------------*/
+
+
+
+	// Allocate device memory 
+	float* dev_kernelRow;
+	float* dev_kernelCol;
+	float* dev_outputIm;
+	float* dev_buffer2;
+
+
+
+	int paddedByteSize = sizeof(float) * paddedCols * paddedRows;
+	int kernelByteSize = sizeof(float) * kernelSize;
+	int imByteSize = sizeof(float) * rows * cols;
+
+	cudaMalloc((void**)& dev_kernelRow, kernelByteSize);
+	cudaMalloc((void**)& dev_kernelCol, kernelByteSize);
+	cudaMalloc((void**)& dev_outputIm, imByteSize);
+	cudaMalloc((void**)& dev_buffer2, paddedByteSize);
+
+
+	// Transfer data from host to device
+	cudaMemcpy(dev_buffer2, ptrPadded, paddedByteSize, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_kernelRow, rowKernel, kernelByteSize, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_kernelCol, colKernel, kernelByteSize, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_outputIm, out, imByteSize, cudaMemcpyHostToDevice);
+
+	// CUDA configuration 
+	int xDim = 16;
+	int yDim = 16;
+
+	dim3 block(xDim, yDim);
+	dim3 grid((paddedRows + xDim - 1) / xDim, (paddedCols + yDim - 1) / yDim);
+
+	checkCudaErrors(cudaDeviceSynchronize());
+
+	start = high_resolution_clock::now();
+
+	GPUconvolutionCol << <grid, block >> > (dev_buffer2, dev_kernelCol, dev_outputIm, paddedRows, paddedCols, kernelSize);
+
+	paddingImageGPU << <grid, block >> > (dev_outputIm, dev_buffer2, paddedRows, paddedCols);
+
+	GPUconvolutionRow <<<grid, block>>> (dev_buffer2, dev_kernelRow, dev_outputIm, paddedRows, paddedCols, kernelSize);
+
+	end = high_resolution_clock::now();
+
+	elapsed_time = end - start;
+	cout << "GPU result: " << elapsed_time.count() << endl;
+
+
+	
+
+	
+	checkCudaErrors(cudaDeviceSynchronize());
+
+	float* paddedOutTest = new float [rows * cols];
+
+
+	//cudaMemcpy(out, dev_buffer, imByteSize, cudaMemcpyDeviceToHost);
+	cudaMemcpy(paddedOutTest, dev_outputIm, imByteSize, cudaMemcpyDeviceToHost);
+
+	cout << *(out + 100 * cols + 100) << endl;
+	pointerToMat(result2, paddedOutTest, rows, cols);
+	//pointerToMat(result, out, rows, cols);
+
+
+	result2.convertTo(result2, CV_8U);
+	//result.convertTo(result, CV_8U);
+
+
+	result.convertTo(result, CV_8U);
+	//imshow("IMAGE_CPU", result);
+
+	//imshow("IMAGE2_GPU", result2);
+	//imshow("IMAGE2", result);
+	//waitKey(0);
+
+	cudaFree(dev_kernelCol);
+	cudaFree(dev_kernelRow);
+	cudaFree(dev_outputIm);
+	cudaFree(dev_buffer2);
+	cudaDeviceReset();
+	
+
+}
+
+
+
+void kernelImplementation(float* rowKernel, float* colKernel)
+{
+
+	// Row kernel implementation
+	*(rowKernel + 0) = -1;
+	*(rowKernel + 1) =  0;
+	*(rowKernel + 2) =  1;
+
+	// Col kernel implementation
+	*(colKernel + 0) = 1;
+	*(colKernel + 1) = 2;
+	*(colKernel + 2) = 1;
+
+}
+
+void showMat(const float*matrix , int xSize, int ySize)
+{
+	for (int i = 0; i < xSize; i++)
+	{
+		for (int j = 0; j < ySize; j++)
+		{
+			cout << *(matrix + i * ySize + j) << " ";
+		}
+		cout << endl;
+	}
+}
+
+
+
+void convolutionRow(const float*source, const float*kernel, float*output, int xSize, int ySize, int kernel_size)
+{
+
+	float* temp = new float[kernel_size];
+	int outRow = xSize - 2;
+	int outCol = ySize - 2;
+
+	for (int i = floor(kernel_size/2); i < xSize - (kernel_size/2); i++)
+	{
+		for (int j = floor(kernel_size/2); j < ySize - floor(kernel_size/2); j++)
+		{
+			for (int c = 0; c < 3; c++)
+			{
+				*(temp + c) = *(kernel + c) * *(source + i * ySize + (j + (c - kernel_size + 2)));
+			}
+			*(output + (i - 1) * outCol + (j-1)) = *(temp + 0) + *(temp + 1) + *(temp + 2);
+		}
+	}
+
+}
+
+void convolutionCol(const float* source, const float* kernel, float* output, int xSize, int ySize, int kernel_size)
+{
+
+	float* temp = new float[kernel_size];
+	int outRow = xSize - 2;
+	int outCol = ySize - 2;
+
+	for (int i = floor(kernel_size / 2); i < xSize - (kernel_size / 2); i++)
+	{
+		for (int j = floor(kernel_size / 2); j < ySize - floor(kernel_size / 2); j++)
+		{
+			for (int c = 0; c < 3; c++)
+			{
+				*(temp + c) = *(kernel + c) * *(source + (i+(c - kernel_size + 2)) * ySize + j);
+			}
+		*(output + (i-1)*outCol + (j - 1)) = *(temp + 0) + *(temp + 1) + *(temp + 2);
+		}
+	}
+	
+}
+
+
+
+
+
+
+__global__ void GPUconvolutionCol(float* source, float* kernel, float* output, int xSize, int ySize, int kernel_size)
+{
+
+	int outRow = xSize - 2;
+	int outCol = ySize - 2;
+
+	int i = threadIdx.x + blockDim.x * blockIdx.x + 1;
+	int j = threadIdx.y + blockDim.y * blockIdx.y + 1;
+	int offset = i * xSize + j;
+	
+	if (i >= 1 && i < xSize - 1 && j >= 1 && j < ySize - 1)
+	{
+		*(output + (i - 1) * outCol + (j - 1)) = 0;
+		for (int c = 0; c < 3; c++)
+		{
+			*(output + (i - 1) * outCol + (j - 1)) += *(kernel + c) * *(source + (i + (c - kernel_size + 2)) * ySize + j);
+		}
+	}
+}
+
+
+
+__global__ void paddingImageGPU(float* source, float* padded, int xPaddedSize, int yPaddedSize)
+{
+	int ySize = yPaddedSize - 2;
+
+	int i = threadIdx.x + blockIdx.x * blockDim.x + 1;
+	int j = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+
+	if (i >= 1 && i < xPaddedSize - 1 && j >= 1 && j < xPaddedSize - 1)
+	{
+		*(padded + i * yPaddedSize + j) = *(source + (i - 1) * ySize + (j - 1));
+	}
+}
+
+
+
+
+
+__global__ void GPUconvolutionRow(float* source, float* kernel, float* output, int xSize, int ySize, int kernel_size)
+{
+
+	//float* temp = new float[kernel_size];
+	int outRow = xSize - 2;
+	int outCol = ySize - 2;
+
+	int i = threadIdx.x + blockIdx.x * blockDim.x + 1;
+	int j = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+	if (i >= 1 && i < xSize - 1 && j >= 1 && j < ySize - 1)
+	{
+		*(output + (i - 1) * outCol + (j - 1)) = 0;
+		for (int c = 0; c < 3; c++)
+		{
+			*(output + (i - 1) * outCol + (j - 1)) += *(kernel + c) * *(source + i * ySize + (j + (c - kernel_size + 2)));
+		}		
+	}
+}
+
+
+
+
+
+void paddingImage(float* source, float* padded, int xPaddedSize, int yPaddedSize)
+{
+	int ySize = yPaddedSize - 2;
+
+	for (int i = 1; i < xPaddedSize - 1; i++)
+	{
+		for (int j = 1; j < yPaddedSize - 1; j++)
+		{
+			*(padded + i * yPaddedSize + j) = *(source + (i-1) * ySize + (j-1));
+		}
+	}
+}
+
+
+
+
+
+void pointerToMat(Mat& matIm, float* pointerIm, int rows, int cols)
+{
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			matIm.at<float>(i, j) = *(pointerIm + cols *i + j);
+		}
+	}
+}
+
+
+void setZero(float* image, int rows, int cols)
+{
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			*(image + cols * i + j) = 0;
+		}
+	}
+}
+
