@@ -2,7 +2,7 @@
  Separable image convolution using CUDA
  
  
-Convolutions are used by many application for engineering. In this project CUDA is used for an efficient and high performance implementation of separable convolutoion filter. All code is developed with pencv 4.1.0 and CUDA 10.1 libraries on Visiual Studio 2019 platform. Sequential convolution is performed on CPU and parallel convolution is performed on GPU using global memory. In CPU result:0.0034949, in GPU result: 2.66e-05. 
+Convolutions are used by many application for engineering. In this project CUDA is used for an efficient and high performance implementation of separable convolutoion filter. All code is developed with Opencv 4.1.0 and CUDA 10.1 libraries on Visiual Studio 2019 platform. Sequential convolution is performed on CPU and parallel convolution is performed on GPU using global memory. In CPU result:0.0034949, in GPU result: 2.66e-05. 
 
 **CONVOLUTION**
 
